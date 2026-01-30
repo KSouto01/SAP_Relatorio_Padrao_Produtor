@@ -1,0 +1,9 @@
+body {
+    background-color: #E6E6E6;
+    margin: 0;
+}
+.DateInput_input {
+    border-radius: 5px;
+    border: 1px solid #ccc;
+    padding: 5px 10px;
+}
