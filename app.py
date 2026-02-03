@@ -1,282 +1,232 @@
-# VERSÃO DO ARQUIVO: 10.12
+# VERSÃO: 12.3 - Layout Single Screen (Sem Scroll da Página)
 import dash
-from dash import dcc, html, Input, Output, State, dash_table, no_update
+from dash import dcc, html, Input, Output, State, dash_table, no_update, ctx
 import dash_bootstrap_components as dbc
 from datetime import date, datetime
 import pandas as pd
 from dash.dash_table.Format import Format, Scheme, Group
 from backend.sap_data import SAPConnector
-from backend.pdf_generator import gerar_pdf_oficial
+from backend.pdf_generator import gerar_pdf_detalhado, gerar_pdf_resumido
 
 sap = SAPConnector()
 
-app = dash.Dash(
-    __name__, 
-    external_stylesheets=[dbc.themes.BOOTSTRAP, dbc.icons.BOOTSTRAP],
-    suppress_callback_exceptions=True,
-    meta_tags=[{"name": "viewport", "content": "width=device-width, initial-scale=1"}]
-)
-app.title = "Relatório Padrão Produtor"
+app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP, dbc.icons.BOOTSTRAP])
+app.title = "Relatório Produtor v12.3"
+server = app.server
 
-# --- LAYOUT ---
+# --- ESTILOS COMPACTOS ---
+BADGE_STYLE = {
+    "backgroundColor": "#EF6100", 
+    "color": "white", 
+    "fontSize": "0.85rem", # Fonte menor
+    "padding": "4px 8px", 
+    "marginRight": "5px",
+    "borderRadius": "4px",
+    "fontWeight": "bold",
+    "display": "inline-block"
+}
+
+# Estilo para forçar a tabela a caber na tela sem scroll da página
+TABELA_STYLE = {
+    'height': 'calc(100vh - 260px)', # Calcula altura restante (100% da tela menos o cabeçalho)
+    'overflowY': 'auto'
+}
+
 app.layout = dbc.Container([
-    dcc.Store(id="store-dados-brutos"),
+    dcc.Store(id="store-dados"),
+    dcc.Store(id="store-lista-fornecedores"),
 
-    # 1. NAVBAR (Com Créditos à Direita)
+    # --- NAVBAR (Compacta: py-1) ---
     dbc.Navbar(
         dbc.Container([
             dbc.Row([
-                # Lado Esquerdo: Logo + Título
-                dbc.Col([
-                    html.Div([
-                        html.Img(src="/assets/logo.png", height="40px", className="me-3"),
-                        html.Span("Relatório Padrão Produtor", style={"fontWeight": "bold", "fontSize": "1.4rem", "color": "white", "fontFamily": "Arial"})
-                    ], className="d-flex align-items-center")
-                ], width="auto"),
-                
-                # Lado Direito: Créditos
-                dbc.Col([
-                    html.Div([
-                        html.Span("Equipe: T.I Fazendão", className="d-block", style={"fontSize": "11px", "color": "white", "textAlign": "right", "fontFamily": "Arial"}),
-                        html.Span("Dev: Klaus Maya Souto", className="d-block", style={"fontSize": "11px", "color": "white", "textAlign": "right", "fontFamily": "Arial", "fontWeight": "bold"})
-                    ])
-                ], width="auto", className="d-flex align-items-center")
-                
-            ], className="w-100 justify-content-between align-items-center") # Distribui itens nas pontas
-        ], fluid=True),
-        color="#0C5959", dark=True, className="mb-3 shadow-sm"
+                dbc.Col([html.Img(src="/assets/logo.png", height="30px", className="me-2"), html.Span("Relatório Produtor", style={"color": "white", "fontWeight": "bold", "fontSize": "1.1rem"})], className="d-flex align-items-center"),
+                dbc.Col([html.Div([html.Span("TI Fazendão", className="d-block text-white small text-end")])])
+            ], className="w-100 justify-content-between")
+        ], fluid=True), color="#0C5959", dark=True, className="mb-2 py-1"
     ),
 
-    # 2. PAINEL DE CONTROLE
+    # --- SUPER CARD DE FILTROS (Tudo em um lugar) ---
     dbc.Card([
         dbc.CardBody([
+            # LINHA 1: Tipo + Identificação do Parceiro
             dbc.Row([
+                # Coluna Tipo (Compacta)
                 dbc.Col([
-                    dbc.Label("Data Inicial", className="fw-bold text-secondary small mb-1", style={"fontFamily": "Arial"}),
-                    dbc.Input(id="dt-inicio", type="date", value=date.today().replace(day=1), size="sm")
-                ], width=3),
-                dbc.Col([
-                    dbc.Label("Data Final", className="fw-bold text-secondary small mb-1", style={"fontFamily": "Arial"}),
-                    dbc.Input(id="dt-fim", type="date", value=date.today(), size="sm")
-                ], width=3),
-                dbc.Col([
-                    dbc.Button(
-                        [html.I(className="bi bi-search me-2"), "Carregar Dados"],
-                        id="btn-carregar", color="success", size="sm", className="w-100 fw-bold",
-                        style={"backgroundColor": "#0C5959", "fontFamily": "Arial"}
+                    dbc.Label("Base", className="fw-bold small mb-0"),
+                    dbc.RadioItems(
+                        id="radio-taxa",
+                        options=[{"label": "CPF", "value": "cpf"}, {"label": "CNPJ", "value": "cnpj"}],
+                        value="cpf",
+                        inline=True,
+                        style={"fontSize": "0.8rem"}
                     )
-                ], width=2, className="d-flex align-items-end"), 
+                ], width=2, className="border-end"),
+
+                # Colunas de Parceiro
+                dbc.Col([dbc.Label("Nome", className="small fw-bold mb-0"), dcc.Dropdown(id="dd-nome", placeholder="Nome...", className="small-dropdown-sm")], width=4),
+                dbc.Col([dbc.Label("Cód. SAP", className="small fw-bold mb-0"), dcc.Dropdown(id="dd-codigo", placeholder="Cód...", className="small-dropdown-sm")], width=2),
+                dbc.Col([dbc.Label("Documento", className="small fw-bold mb-0"), dcc.Dropdown(id="dd-doc", placeholder="Doc...", className="small-dropdown-sm")], width=4),
+            ], className="mb-2 g-1 align-items-end"),
+
+            # LINHA 2: Datas + Material + Botão + Exportação
+            dbc.Row([
+                # Datas
+                dbc.Col([dbc.Label("Início", className="small mb-0"), dbc.Input(id="dt-inicio", type="date", value=date.today().replace(day=1), size="sm")], width=2),
+                dbc.Col([dbc.Label("Fim", className="small mb-0"), dbc.Input(id="dt-fim", type="date", value=date.today(), size="sm")], width=2),
+                
+                # Filtro Material (Agora fixo aqui)
                 dbc.Col([
-                    html.Span("⚠️ Máx. 3 meses", className="text-muted small mb-1", style={"fontFamily": "Arial"})
-                ], width=4, className="d-flex align-items-end")
-            ], className="g-2")
-        ], style={"padding": "15px"})
-    ], className="mb-3 border-0 shadow-sm mx-3"), # mx-3 adiciona margem lateral ao card também
+                    dbc.Label("Material", className="small mb-0 fw-bold text-primary"),
+                    dcc.Dropdown(id="dd-material", placeholder="Todos", clearable=True, className="small-dropdown-sm")
+                ], width=3),
 
-    # 3. FILTROS E EXPORTAÇÃO
-    dbc.Collapse(
-        dbc.Card([
-            dbc.CardBody([
-                dbc.Row([
-                    dbc.Col([
-                        dbc.Label("Filtrar Parceiro", className="fw-bold text-success small mb-1", style={"fontFamily": "Arial"}),
-                        dcc.Dropdown(id="dd-parceiro", placeholder="Selecione...", className="small-dropdown")
-                    ], md=5),
-                    dbc.Col([
-                        dbc.Label("Filtrar Material", className="fw-bold text-success small mb-1", style={"fontFamily": "Arial"}),
-                        dcc.Dropdown(id="dd-material", placeholder="Selecione...", className="small-dropdown")
-                    ], md=5),
-                    dbc.Col([
-                        dbc.Label("Ações", className="text-white small d-block mb-1"), 
-                        dbc.ButtonGroup([
-                            dbc.Button([html.I(className="bi bi-file-earmark-excel me-1"), "Excel"], id="btn-excel", color="success", outline=True, size="sm", style={"fontFamily": "Arial"}),
-                            dbc.Button([html.I(className="bi bi-file-earmark-pdf me-1"), "PDF Oficial"], id="btn-pdf", color="danger", outline=True, size="sm", style={"fontFamily": "Arial"})
-                        ], className="d-flex w-100")
-                    ], md=2, className="d-flex align-items-end")
-                ])
-            ])
-        ], className="mb-2 border-0 shadow-sm mx-3"),
-        id="collapse-filtros", is_open=False
-    ),
+                # Botão Buscar
+                dbc.Col([
+                    dbc.Label("Ação", className="small mb-0 text-white"),
+                    dbc.Button([html.I(className="bi bi-search me-1"), "Buscar"], id="btn-carregar", color="success", size="sm", className="w-100 fw-bold")
+                ], width=2),
 
-    # 4. BARRA DE TOTAIS
-    html.Div(id="barra-totais", className="mb-2 mx-3"), # mx-3 alinha com a tabela
+                # Botões Exportar (Icones apenas para economizar espaço)
+                dbc.Col([
+                    dbc.Label("Exportar", className="small mb-0 text-secondary"),
+                    dbc.ButtonGroup([
+                        dbc.Button(html.I(className="bi bi-file-earmark-excel"), id="btn-excel", color="success", outline=True, size="sm", title="Excel"),
+                        dbc.Button(html.I(className="bi bi-file-text"), id="btn-pdf-resumido", color="danger", outline=True, size="sm", title="PDF Resumido"),
+                        dbc.Button(html.I(className="bi bi-file-earmark-pdf-fill"), id="btn-pdf-detalhado", color="danger", size="sm", title="PDF Detalhado")
+                    ], className="w-100")
+                ], width=3)
+            ], className="g-1 align-items-end")
+        ], className="p-2") # Padding interno reduzido
+    ], className="mb-2 shadow-sm mx-2"),
 
-    # 5. TABELA (Com Borda Arredondada e Espaçamento)
+    # --- LINHA DE TOTAIS ---
+    html.Div(id="barra-totais", className="mb-1 mx-2 d-flex flex-wrap gap-2"),
+
+    # --- TABELA (Com Scroll Interno) ---
     dcc.Loading(
-        id="loading", type="default", color="#0C5959",
-        children=html.Div(
-            id="area-tabela", 
-            style={
-                'height': 'calc(100vh - 380px)', 
-                'backgroundColor': 'white', 
-                'borderRadius': '20px', 
-                'border': '1px solid #e0e0e0',
-                'overflow': 'hidden',
-                # AQUI ESTÁ O ESPAÇAMENTO DA BORDA DA TELA
-                'margin': '0 15px 15px 15px' 
-            }
-        )
+        html.Div(id="area-tabela", style={'margin': '0 10px', 'borderRadius': '5px', 'overflow': 'hidden'}), 
+        color="#EF6100"
     ),
-    
-    dcc.Download(id="download-excel"),
-    dcc.Download(id="download-pdf")
+    dcc.Download(id="download-files")
 
-], fluid=True, className="vh-100 d-flex flex-column bg-light p-0")
+], fluid=True, className="vh-100 bg-light p-0 overflow-hidden") # overflow-hidden na pagina principal
+
 
 # --- CALLBACKS ---
 
+# 1. Carregar Base
+@app.callback(Output("store-lista-fornecedores", "data"), Input("radio-taxa", "value"))
+def carregar_base_local(tipo):
+    df = sap.buscar_fornecedores(tipo)
+    return df.to_dict('records') if not df.empty else []
+
+# 2. Popular Dropdowns
+@app.callback([Output("dd-nome", "options"), Output("dd-codigo", "options"), Output("dd-doc", "options")], Input("store-lista-fornecedores", "data"))
+def popular_opcoes(data):
+    if not data: return [], [], []
+    opts_nome = sorted([{'label': d['SupplierName'], 'value': d['SupplierName']} for d in data], key=lambda x: x['label'])
+    opts_cod = sorted([{'label': f"{d['Supplier']} - {d['SupplierName']}", 'value': d['Supplier']} for d in data], key=lambda x: x['label'])
+    opts_doc = sorted([{'label': d['BPTaxNumber'], 'value': d['BPTaxNumber']} for d in data], key=lambda x: x['label'])
+    return opts_nome, opts_cod, opts_doc
+
+# 3. Sincronizar
+@app.callback([Output("dd-nome", "value"), Output("dd-codigo", "value"), Output("dd-doc", "value")], [Input("dd-nome", "value"), Input("dd-codigo", "value"), Input("dd-doc", "value")], State("store-lista-fornecedores", "data"), prevent_initial_call=True)
+def sincronizar_filtros(nome, codigo, doc, data):
+    if not data: return no_update, no_update, no_update
+    ctx_id = ctx.triggered_id
+    df = pd.DataFrame(data)
+    row = None
+    if ctx_id == "dd-nome" and nome: row = df[df['SupplierName'] == nome]
+    elif ctx_id == "dd-codigo" and codigo: row = df[df['Supplier'] == codigo]
+    elif ctx_id == "dd-doc" and doc: row = df[df['BPTaxNumber'] == doc]
+    
+    if row is not None and not row.empty:
+        r = row.iloc[0]
+        return r['SupplierName'], r['Supplier'], r['BPTaxNumber']
+    return no_update, no_update, no_update
+
+# 4. Buscar Dados e Popular Material (Removido collapse output pois agora é fixo)
 @app.callback(
-    Output("store-dados-brutos", "data"),
-    Output("collapse-filtros", "is_open"),
-    Output("dd-parceiro", "options"),
+    Output("store-dados", "data"),
     Output("dd-material", "options"),
-    Output("loading", "children"),
+    Output("dd-material", "value"),
     Input("btn-carregar", "n_clicks"),
     State("dt-inicio", "value"),
     State("dt-fim", "value"),
+    State("dd-codigo", "value"),
     prevent_initial_call=True
 )
-def carregar(n, start, end):
-    if not start or not end: return no_update, False, [], [], no_update
-    d1 = datetime.strptime(start, '%Y-%m-%d')
-    d2 = datetime.strptime(end, '%Y-%m-%d')
-    if (d2 - d1).days > 95: return [], False, [], [], dbc.Alert("Período > 3 meses.", color="danger")
-
-    df = sap.buscar_dados_por_periodo(start, end)
-    if df.empty: return [], False, [], [], dbc.Alert("Nenhum dado encontrado.", color="warning")
-
-    df['Filtro_Parceiro'] = df['Cod. Parceiro'].astype(str) + " - " + df['Razão Social'].astype(str)
-    df['Filtro_Material'] = df['Material'].astype(str) + " - " + df['NomeMaterial'].astype(str)
+def buscar_dados_sap(n, start, end, parceiro_id):
+    if not parceiro_id: return [], [], None
     
-    opts_p = [{'label': i, 'value': i} for i in sorted(df['Filtro_Parceiro'].unique())]
-    opts_m = [{'label': i, 'value': i} for i in sorted(df['Filtro_Material'].unique())]
+    df = sap.buscar_dados_por_periodo(start, end, parceiro_id=parceiro_id)
+    if df.empty: return [], [], None
+    
+    materiais = sorted(df['NomeMaterial'].astype(str).dropna().unique())
+    opts_mat = [{'label': m, 'value': m} for m in materiais]
+    
+    return df.to_dict('records'), opts_mat, None
 
-    return df.to_dict('records'), True, opts_p, opts_m, no_update
-
-@app.callback(
-    Output("area-tabela", "children"),
-    Output("barra-totais", "children"),
-    Input("store-dados-brutos", "data"),
-    Input("dd-parceiro", "value"),
-    Input("dd-material", "value")
-)
-def renderizar(data, parc, mat):
-    if not data: return html.Div(), None
+# 5. Tabela e Totais
+@app.callback(Output("area-tabela", "children"), Output("barra-totais", "children"), Input("store-dados", "data"), Input("dd-material", "value"))
+def atualizar_tabela_totais(data, material_selecionado):
+    if not data: return dbc.Alert("Aguardando busca...", color="light", className="text-center small"), []
     df = pd.DataFrame(data)
     
-    if parc: df = df[df['Filtro_Parceiro'] == parc]
-    if mat: df = df[df['Filtro_Material'] == mat]
-
-    # --- BARRA DE TOTAIS ---
-    def fmt_num(val): return f"{val:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+    if material_selecionado:
+        df = df[df['NomeMaterial'] == material_selecionado]
+        if df.empty: return dbc.Alert("Sem dados para este material.", color="warning"), []
     
-    style_box = {
-        "backgroundColor": "#EF6100", 
-        "color": "white", 
-        "borderRadius": "5px", 
-        "padding": "8px 18px", 
-        "fontSize": "13px",
-        "fontWeight": "bold",
-        "boxShadow": "0 2px 4px rgba(0,0,0,0.1)",
-        "fontFamily": "Arial",
-        "whiteSpace": "nowrap"
+    totais = {
+        "Bruto": df["Peso Bruto (Kg)"].sum(),
+        "Tara": df["Peso Tara (Kg)"].sum(),
+        "Líquido": df["Peso liquido (Kg)"].sum(),
+        "Aplicada": df["Qtd Aplicada (Kg)"].sum(),
+        "Descontos": df["Descontos (Kg)"].sum()
     }
+    badges = [html.Span([f"{k}: ", html.B(f"{v:,.0f}".replace(",", "X").replace(".", ",").replace("X", "."))], style=BADGE_STYLE) for k, v in totais.items()]
     
-    if df.empty:
-        totais_comp = html.Div("Sem dados para totalizar", style={"color": "gray", "fontSize": "11px"})
-    else:
-        totais_comp = dbc.Row([
-            dbc.Col(html.Div([html.Span("Peso Bruto: "), html.Span(fmt_num(df["Peso Bruto (Kg)"].sum()) + " kg")], style=style_box), width="auto"),
-            dbc.Col(html.Div([html.Span("Tara: "), html.Span(fmt_num(df["Peso Tara (Kg)"].sum()) + " kg")], style=style_box), width="auto"),
-            dbc.Col(html.Div([html.Span("Líquido: "), html.Span(fmt_num(df["Peso liquido (Kg)"].sum()) + " kg")], style=style_box), width="auto"),
-            dbc.Col(html.Div([html.Span("Qtd Aplicada: "), html.Span(fmt_num(df["Qtd Aplicada (Kg)"].sum()) + " kg")], style=style_box), width="auto"),
-            dbc.Col(html.Div([html.Span("Descontos: "), html.Span(fmt_num(df["Descontos (Kg)"].sum()) + " kg")], style=style_box), width="auto"),
-        ], className="g-2 justify-content-start align-items-center")
-
-    # --- TABELA ---
     cols = []
-    formato = Format(precision=2, scheme=Scheme.fixed, group=Group.yes, group_delimiter='.', decimal_delimiter=',')
+    formato_num = Format(precision=2, scheme=Scheme.fixed, group=Group.yes, group_delimiter='.', decimal_delimiter=',')
     for c in df.columns:
-        if c in ["Filtro_Parceiro", "Filtro_Material"]: continue
-        type_ = "numeric" if "(Kg)" in c or "%" in c else "text"
-        fmt = formato if type_ == "numeric" else None
-        cols.append({"name": c, "id": c, "type": type_, "format": fmt})
+        if c in ["Cod. Parceiro", "DataLancamento", "Cancelado"]: continue
+        tipo = 'numeric' if "(Kg)" in c or "%" in c else 'text'
+        cols.append({"name": c, "id": c, "type": tipo, "format": formato_num if tipo=='numeric' else None})
 
+    # Tabela com Altura Fixa (Scroll Interno)
     tabela = dash_table.DataTable(
-        id="tabela-principal",
         data=df.to_dict('records'),
         columns=cols,
-        virtualization=True,
-        page_action='none',
+        fixed_rows={'headers': True}, # Cabeçalho fixo
+        style_table=TABELA_STYLE,    # Altura calculada para tela cheia
+        page_action="none",          # Scroll infinito virtual (sem paginação 1,2,3)
+        virtualization=True,         # Renderização rápida
         filter_action="native",
         sort_action="native",
-        sort_mode="multi",
-        fixed_rows={'headers': True},
-        style_table={'height': '100%', 'overflowY': 'auto', 'minWidth': '100%'},
-        style_header={
-            'backgroundColor': '#0C5959', 
-            'color': 'white', 
-            'fontWeight': 'bold', 
-            'textAlign': 'center', 
-            'border': '1px solid white',
-            'fontFamily': 'Arial',
-            'fontSize': '13px'
-        },
-        style_cell={
-            'fontFamily': 'Tahoma',
-            'fontSize': '11px', 
-            'textAlign': 'left', 
-            'padding': '5px', 
-            'minWidth': '100px', 
-            'maxWidth': '180px', 
-            'overflow': 'hidden', 
-            'textOverflow': 'ellipsis'
-        },
+        style_header={'backgroundColor': '#0C5959', 'color': 'white', 'fontWeight': 'bold', 'fontSize': '10px'},
+        style_cell={'fontSize': '10px', 'textAlign': 'left', 'padding': '2px 5px', 'minWidth': '80px'},
         style_data_conditional=[{'if': {'row_index': 'odd'}, 'backgroundColor': '#f8f9fa'}]
     )
+    return tabela, badges
 
-    return tabela, totais_comp
-
-@app.callback(
-    Output("download-excel", "data"),
-    Input("btn-excel", "n_clicks"),
-    State("tabela-principal", "derived_virtual_data"),
-    prevent_initial_call=True
-)
-def baixar_excel(n, rows):
-    if not rows: return no_update
-    df = pd.DataFrame(rows)
-    df.drop(columns=["Filtro_Parceiro", "Filtro_Material"], errors='ignore', inplace=True)
-    return dcc.send_data_frame(df.to_excel, "relatorio_sap.xlsx", index=False)
-
-@app.callback(
-    Output("download-pdf", "data"),
-    Input("btn-pdf", "n_clicks"),
-    State("store-dados-brutos", "data"),
-    State("dd-parceiro", "value"),
-    State("dd-material", "value"),
-    State("dt-inicio", "value"),
-    State("dt-fim", "value"),
-    prevent_initial_call=True
-)
-def baixar_pdf(n, data, parc, mat, start, end):
-    if not data or not parc or not mat: return no_update
+# 6. Exportação
+@app.callback(Output("download-files", "data"), Input("btn-excel", "n_clicks"), Input("btn-pdf-resumido", "n_clicks"), Input("btn-pdf-detalhado", "n_clicks"), State("store-dados", "data"), State("dt-inicio", "value"), State("dt-fim", "value"), State("dd-nome", "value"), State("dd-codigo", "value"), State("dd-material", "value"), prevent_initial_call=True)
+def exportar(n_ex, n_res, n_det, data, start, end, nome_p, cod_p, material_sel):
+    if not data: return no_update
+    ctx_id = ctx.triggered_id
     df = pd.DataFrame(data)
-    df = df[(df['Filtro_Parceiro'] == parc) & (df['Filtro_Material'] == mat)]
     
-    p_cod, p_nome = parc.split(" - ", 1)
-    m_cod, m_nome = mat.split(" - ", 1)
-    fmt = lambda d: datetime.strptime(d, '%Y-%m-%d').strftime('%d/%m/%Y')
+    material_label = material_sel if material_sel else "TODOS OS MATERIAIS"
+    if material_sel: df = df[df['NomeMaterial'] == material_sel]
     
-    buffer = gerar_pdf_oficial(
-        df, 
-        {'codigo': p_cod, 'nome': p_nome},
-        {'codigo': m_cod, 'nome': m_nome},
-        f"{fmt(start)} a {fmt(end)}"
-    )
-    if buffer: return dcc.send_bytes(buffer.getvalue(), "relatorio_oficial.pdf")
+    periodo = f"{datetime.strptime(start, '%Y-%m-%d').strftime('%d/%m/%Y')} a {datetime.strptime(end, '%Y-%m-%d').strftime('%d/%m/%Y')}"
+    parceiro_label = f"{nome_p} ({cod_p})" if nome_p else cod_p
+
+    if ctx_id == "btn-excel": return dcc.send_data_frame(df.to_excel, f"Relatorio_{cod_p}.xlsx", index=False)
+    elif ctx_id == "btn-pdf-resumido": buffer = gerar_pdf_resumido(df, parceiro_label, material_label, periodo); return dcc.send_bytes(buffer.getvalue(), f"Resumido_{cod_p}.pdf")
+    elif ctx_id == "btn-pdf-detalhado": buffer = gerar_pdf_detalhado(df, parceiro_label, material_label, periodo); return dcc.send_bytes(buffer.getvalue(), f"Detalhado_{cod_p}.pdf")
     return no_update
 
 if __name__ == "__main__":
-    app.run(debug=False, port=8052, host='0.0.0.0')
+    app.run(debug=True, port=8050, host='0.0.0.0')

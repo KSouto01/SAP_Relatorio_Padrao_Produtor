@@ -1,8 +1,11 @@
+# Ignorar arquivos de ambiente e senhas
+.env
+venv/
 __pycache__/
 *.pyc
-.env
-.venv/
-env/
-.DS_Store
+
+# Ignorar arquivos temporários gerados pelo sistema
+cache_fornecedores.pkl
 *.xlsx
 *.pdf
+.DS_Store
