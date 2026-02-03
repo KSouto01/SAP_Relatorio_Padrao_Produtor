@@ -41,7 +41,7 @@ app.layout = dbc.Container([
         dbc.Container([
             dbc.Row([
                 dbc.Col([html.Img(src="/assets/logo.png", height="30px", className="me-2"), html.Span("Relatório Produtor", style={"color": "white", "fontWeight": "bold", "fontSize": "1.1rem"})], className="d-flex align-items-center"),
-                dbc.Col([html.Div([html.Span("TI Fazendão", className="d-block text-white small text-end")])])
+                dbc.Col([html.Div([html.Span("T.I Fazendão | Klaus Maya Souto", className="d-block text-white small text-end")])])
             ], className="w-100 justify-content-between")
         ], fluid=True), color="#0C5959", dark=True, className="mb-2 py-1"
     ),
