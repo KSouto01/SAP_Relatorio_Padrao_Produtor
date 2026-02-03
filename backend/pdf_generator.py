@@ -96,7 +96,7 @@ def gerar_pdf_resumido(df, parceiro_info, material_info, periodo_texto):
     """
     try:
         # Menos registros por página pois agora cada um ocupa 2 linhas visuais
-        ROWS_PER_PAGE = 14 
+        ROWS_PER_PAGE = 10
         
         totais = {
             "Bruto": df["Peso Bruto (Kg)"].sum() if "Peso Bruto (Kg)" in df.columns else 0,
@@ -188,7 +188,7 @@ def gerar_pdf_resumido(df, parceiro_info, material_info, periodo_texto):
 def gerar_pdf_detalhado(df, parceiro_info, material_info, periodo_texto):
     """Layout Detalhado (Mantido igual pois estava aprovado)"""
     try:
-        ROWS_PER_PAGE = 6
+        ROWS_PER_PAGE = 7
         cols_totais = ["Peso Bruto (Kg)", "Peso Tara (Kg)", "Peso liquido (Kg)", "Qtd Aplicada (Kg)", "Descontos (Kg)"]
         totais_gerais = {}
         for col in cols_totais:
