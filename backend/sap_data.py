@@ -115,7 +115,7 @@ class SAPConnector:
         f_rom = (
             "(Instr_EDC eq '07' or Instr_EDC eq '03' or Instr_EDC eq '35') and "
             "(Tipo_Contrato eq 'AC3P' or Tipo_Contrato eq 'ZFIX' or Tipo_Contrato eq '') and "
-            f"(data_edc ge '{d_ini}' and data_edc le '{d_fim}')"
+            f"(data_edc ge '{d_ini}' and data_edc le '{d_fim}') and (stat eq 'I7U07')"
         )
         if pid_padded: f_rom += f" and (Parceiro eq '{pid_padded}')"
         
