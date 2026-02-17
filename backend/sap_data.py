@@ -1,4 +1,4 @@
-# VERSÃO: 12.3 - Padronização de Colunas (Nota Fazendao)
+# VERSÃO: 12.4 - Correção Manual (I7U07) Inclusa
 import os
 import pandas as pd
 import requests
@@ -112,6 +112,7 @@ class SAPConnector:
         pid_padded = None
         if parceiro_id: pid_padded = str(parceiro_id).strip().zfill(10)
 
+        # MUDANÇA AQUI: Inclusão do filtro (stat eq 'I7U07')
         f_rom = (
             "(Instr_EDC eq '07' or Instr_EDC eq '03' or Instr_EDC eq '35') and "
             "(Tipo_Contrato eq 'AC3P' or Tipo_Contrato eq 'ZFIX' or Tipo_Contrato eq '') and "
@@ -144,7 +145,6 @@ class SAPConnector:
         if 'data_edc' in df_final.columns:
             df_final['data_edc'] = pd.to_datetime(df_final['data_edc'], format='%Y%m%d', errors='coerce').dt.strftime('%d/%m/%Y')
         
-        # AQUI FOI FEITA A MUDANÇA: nfenum -> Nota Fazendao
         rename_map = {"Doc_Aplicacao": "ID.apl", "Parceiro": "Cod. Parceiro", "Parceiro_T": "Razão Social", "Instr_EDC": "Instr. EDC", "Num_Pesagem": "Romaneio", "NomeLocal_Evento": "Unidade", "NFe": "Nota Produtor", "NomeMaterial": "NomeMaterial", "TextoTransgenia_Descarga": "Transgenia", "Peso_Bruto_Descarga": "Peso Bruto (Kg)", "Tara_Descarga": "Peso Tara (Kg)", "Peso_Liquido_Descarga": "Peso liquido (Kg)", "Qtd_Aplicada": "Qtd Aplicada (Kg)", "Peso_Total": "Descontos (Kg)", "Umidade_Descarga": "% Umidade", "Peso_umidade": "Desconto Umidade (Kg)", "Impurezas_Descarga": "% Impurezas", "Peso_Impurezas": "Desconto Impureza (Kg)", "Ardidos_Descarga": "% Ardido", "Peso_Ardidos": "Desconto Ardidos (Kg)", "Avariados_Descarga": "% Avariados", "Peso_Avariados": "Desconto Avariados (Kg)", "Esverdeados_Descarga": "% Esverdeados", "Peso_Esverdeados": "Desconto Esverdeados (Kg)", "Quebrados_Descarga": "% Quebrados", "Peso_Quebrados": "Desconto Quebrados (Kg)", "Queimados_Descarga": "% Queimados", "Peso_Queimados": "Desconto Queimados (Kg)", "data_edc": "Data do edc", "nfenum": "Nota Fazendao"}
         df_final.rename(columns=rename_map, inplace=True)
         

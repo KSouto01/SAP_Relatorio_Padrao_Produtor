@@ -1,4 +1,4 @@
-# VERSÃO: 13.6 - Títulos Oficiais (Relatório Padrão Produtor Resumido/Detalhado)
+# VERSÃO: 13.7 - Adição de Contrato no Cabeçalho
 from xhtml2pdf import pisa
 from io import BytesIO
 import pandas as pd
@@ -47,9 +47,10 @@ def get_base_html(conteudo_paginas):
     </html>
     """
 
-def gerar_pdf_resumido(df, parceiro_info, material_info, safra_info, periodo_texto):
+# MUDANÇA: Adicionado argumento contrato_info
+def gerar_pdf_resumido(df, parceiro_info, material_info, safra_info, contrato_info, periodo_texto):
     try:
-        ROWS_PER_PAGE = 10 
+        ROWS_PER_PAGE = 9 
         cols_totais = ["Peso Bruto (Kg)", "Peso Tara (Kg)", "Peso liquido (Kg)", "Qtd Aplicada (Kg)", "Descontos (Kg)"]
         totais = {col: df[col].sum() for col in cols_totais if col in df.columns}
 
@@ -76,9 +77,9 @@ def gerar_pdf_resumido(df, parceiro_info, material_info, safra_info, periodo_tex
             
             break_page = '<div class="page-break"></div>' if i < len(chunks) - 1 else ''
             
-            # MUDANÇA: TÍTULO ATUALIZADO
+            # MUDANÇA: Incluído CONTRATO na info-box
             pages_html += f"""<div><table class="header-table"><tr><td width="20%">{img_tag}</td><td width="60%" class="title">Relatório Padrão Produtor Resumido</td><td width="20%" class="meta">{periodo_texto}<br>Pág: {i+1}/{len(chunks)}</td></tr></table>
-            <div class="info-box">PARCEIRO: {parceiro_info} &nbsp;&nbsp;|&nbsp;&nbsp; MATERIAL: {material_info} &nbsp;&nbsp;|&nbsp;&nbsp; SAFRA: {safra_info}</div>
+            <div class="info-box">PARCEIRO: {parceiro_info} &nbsp;&nbsp;|&nbsp;&nbsp; MATERIAL: {material_info} &nbsp;&nbsp;|&nbsp;&nbsp; SAFRA: {safra_info} &nbsp;&nbsp;|&nbsp;&nbsp; CONTRATO: {contrato_info}</div>
             <table>{rows_html}{row_total}</table></div>{break_page}"""
         
         buffer = BytesIO()
@@ -89,7 +90,8 @@ def gerar_pdf_resumido(df, parceiro_info, material_info, safra_info, periodo_tex
         logger.error(f"ERRO RESUMIDO: {e}")
         return BytesIO()
 
-def gerar_pdf_detalhado(df, parceiro_info, material_info, safra_info, periodo_texto):
+# MUDANÇA: Adicionado argumento contrato_info
+def gerar_pdf_detalhado(df, parceiro_info, material_info, safra_info, contrato_info, periodo_texto):
     try:
         ROWS_PER_PAGE = 7
         cols_totais = ["Peso Bruto (Kg)", "Peso Tara (Kg)", "Peso liquido (Kg)", "Qtd Aplicada (Kg)", "Descontos (Kg)"]
@@ -115,9 +117,9 @@ def gerar_pdf_detalhado(df, parceiro_info, material_info, safra_info, periodo_te
                 row_total = f"""<tr class="row-total"><td>TOTAIS:</td><td>Bruto: {formatar_numero(totais_gerais.get('Peso Bruto (Kg)', 0))}</td><td>Tara: {formatar_numero(totais_gerais.get('Peso Tara (Kg)', 0))}</td><td>Líquido: {formatar_numero(totais_gerais.get('Peso liquido (Kg)', 0))}</td><td>Qtd Apl: {formatar_numero(totais_gerais.get('Qtd Aplicada (Kg)', 0))}</td><td colspan="5">Desc: {formatar_numero(totais_gerais.get('Descontos (Kg)', 0))}</td></tr>"""
 
             break_page = '<div class="page-break"></div>' if i < len(chunks) - 1 else ''
-            # MUDANÇA: TÍTULO ATUALIZADO
+            # MUDANÇA: Incluído CONTRATO na info-box
             pages_html += f"""<div><table class="header-table"><tr><td width="20%">{img_tag}</td><td width="60%" class="title">Relatório Padrão Produtor Detalhado</td><td width="20%" class="meta">{periodo_texto}<br>Pág: {i+1}/{len(chunks)}</td></tr></table>
-            <div class="info-box">PARCEIRO: {parceiro_info} &nbsp;&nbsp;|&nbsp;&nbsp; MATERIAL: {material_info} &nbsp;&nbsp;|&nbsp;&nbsp; SAFRA: {safra_info}</div>
+            <div class="info-box">PARCEIRO: {parceiro_info} &nbsp;&nbsp;|&nbsp;&nbsp; MATERIAL: {material_info} &nbsp;&nbsp;|&nbsp;&nbsp; SAFRA: {safra_info} &nbsp;&nbsp;|&nbsp;&nbsp; CONTRATO: {contrato_info}</div>
             <table>{rows_html}{row_total}</table></div>{break_page}"""
 
         buffer = BytesIO()
