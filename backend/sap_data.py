@@ -1,4 +1,4 @@
-# VERSÃO: 12.5 - Fonte Única (Romaneio) e Extração de Nota pela Chave
+# VERSÃO: 12.6 - Fonte Única (Romaneio) com Extração Dupla (Produtor e Fazendão) via Chave de 44 dígitos
 import os
 import pandas as pd
 import requests
@@ -23,7 +23,7 @@ class SAPConnector:
     def __init__(self):
         self.auth = (os.getenv("SAP_USER"), os.getenv("SAP_PASS"))
         self.url_romaneio = os.getenv("API_ROMANEIO_URL")
-        # A URL de fatura foi mantida aqui apenas por legado, mas não é mais acionada.
+        # Fatura não é mais acionada
         self.url_fatura = os.getenv("API_FATURA_URL") 
         self.url_fornecedores = "https://faz.sap.fazendaoto.com.br/sap/opu/odata/sap/FAP_DISPLAY_SUPPLIER_LIST"
 
@@ -120,16 +120,17 @@ class SAPConnector:
         )
         if pid_padded: f_rom += f" and (Parceiro eq '{pid_padded}')"
         
-        # MUDANÇA: Inclusão do campo 'ChaveNFeContraNota' no select
+        # MUDANÇA: Inclusão de ambas as chaves NFe (ContraNota e Referenciada)
         cols_rom = [
             "Parceiro", "Parceiro_T", "Instr_EDC", "contrato", "Num_Pesagem", "data_edc", 
-            "Material", "NomeMaterial", "NomeSafra", "NomeLocal_Evento", "Placa", "NFe", 
+            "Material", "NomeMaterial", "NomeSafra", "NomeLocal_Evento", "Placa", 
             "TextoTransgenia_Descarga", "Peso_Bruto_Descarga", "Tara_Descarga", 
             "Peso_Liquido_Descarga", "Qtd_Aplicada", "Peso_Total", "Umidade_Descarga", 
             "Peso_umidade", "Impurezas_Descarga", "Peso_Impurezas", "Ardidos_Descarga", 
             "Peso_Ardidos", "Avariados_Descarga", "Peso_Avariados", "Esverdeados_Descarga", 
             "Peso_Esverdeados", "Quebrados_Descarga", "Peso_Quebrados", "Queimados_Descarga", 
-            "Peso_Queimados", "Doc_Aplicacao", "Tipo_Contrato", "ChaveNFeContraNota"
+            "Peso_Queimados", "Doc_Aplicacao", "Tipo_Contrato", 
+            "ChaveNFeContraNota", "ChaveNFeReferenciada"
         ]
         
         params_rom = {"$filter": f_rom, "$select": ",".join(cols_rom), "$format": "json"}
@@ -137,28 +138,31 @@ class SAPConnector:
         
         if df_final.empty: return pd.DataFrame()
 
-        # --- NOVA REGRA: Extração da Nota Fazendão via Chave de 44 dígitos ---
+        # --- NOVA REGRA: Extração da Nota via Chaves de 44 dígitos ---
         def extrair_nota(chave):
+            if pd.isna(chave): return ''
             chave = str(chave).strip()
             # Valida se a chave tem os 44 dígitos
             if len(chave) == 44:
-                # Índice 25:34 no Python corresponde às posições 26 a 34. E o lstrip tira os zeros da frente.
+                # Índice 25:34 no Python corresponde às posições 26 a 34 da String
                 nota = chave[25:34].lstrip('0')
                 return nota if nota else '0'
             return ''
             
+        # Aplica a função para criar as colunas que o painel e os PDFs esperam
+        df_final['Nota Produtor'] = df_final['ChaveNFeReferenciada'].apply(extrair_nota)
         df_final['Nota Fazendao'] = df_final['ChaveNFeContraNota'].apply(extrair_nota)
         # ---------------------------------------------------------------------
 
         if 'data_edc' in df_final.columns:
             df_final['data_edc'] = pd.to_datetime(df_final['data_edc'], format='%Y%m%d', errors='coerce').dt.strftime('%d/%m/%Y')
         
-        # MUDANÇA: nfenum removido, pois a Nota Fazendao já foi criada no passo anterior
-        rename_map = {"Doc_Aplicacao": "ID.apl", "Parceiro": "Cod. Parceiro", "Parceiro_T": "Razão Social", "Instr_EDC": "Instr. EDC", "Num_Pesagem": "Romaneio", "NomeLocal_Evento": "Unidade", "NFe": "Nota Produtor", "NomeMaterial": "NomeMaterial", "TextoTransgenia_Descarga": "Transgenia", "Peso_Bruto_Descarga": "Peso Bruto (Kg)", "Tara_Descarga": "Peso Tara (Kg)", "Peso_Liquido_Descarga": "Peso liquido (Kg)", "Qtd_Aplicada": "Qtd Aplicada (Kg)", "Peso_Total": "Descontos (Kg)", "Umidade_Descarga": "% Umidade", "Peso_umidade": "Desconto Umidade (Kg)", "Impurezas_Descarga": "% Impurezas", "Peso_Impurezas": "Desconto Impureza (Kg)", "Ardidos_Descarga": "% Ardido", "Peso_Ardidos": "Desconto Ardidos (Kg)", "Avariados_Descarga": "% Avariados", "Peso_Avariados": "Desconto Avariados (Kg)", "Esverdeados_Descarga": "% Esverdeados", "Peso_Esverdeados": "Desconto Esverdeados (Kg)", "Quebrados_Descarga": "% Quebrados", "Peso_Quebrados": "Desconto Quebrados (Kg)", "Queimados_Descarga": "% Queimados", "Peso_Queimados": "Desconto Queimados (Kg)", "data_edc": "Data do edc"}
+        # Renomeação Padrão
+        rename_map = {"Doc_Aplicacao": "ID.apl", "Parceiro": "Cod. Parceiro", "Parceiro_T": "Razão Social", "Instr_EDC": "Instr. EDC", "Num_Pesagem": "Romaneio", "NomeLocal_Evento": "Unidade", "NomeMaterial": "NomeMaterial", "TextoTransgenia_Descarga": "Transgenia", "Peso_Bruto_Descarga": "Peso Bruto (Kg)", "Tara_Descarga": "Peso Tara (Kg)", "Peso_Liquido_Descarga": "Peso liquido (Kg)", "Qtd_Aplicada": "Qtd Aplicada (Kg)", "Peso_Total": "Descontos (Kg)", "Umidade_Descarga": "% Umidade", "Peso_umidade": "Desconto Umidade (Kg)", "Impurezas_Descarga": "% Impurezas", "Peso_Impurezas": "Desconto Impureza (Kg)", "Ardidos_Descarga": "% Ardido", "Peso_Ardidos": "Desconto Ardidos (Kg)", "Avariados_Descarga": "% Avariados", "Peso_Avariados": "Desconto Avariados (Kg)", "Esverdeados_Descarga": "% Esverdeados", "Peso_Esverdeados": "Desconto Esverdeados (Kg)", "Quebrados_Descarga": "% Quebrados", "Peso_Quebrados": "Desconto Quebrados (Kg)", "Queimados_Descarga": "% Queimados", "Peso_Queimados": "Desconto Queimados (Kg)", "data_edc": "Data do edc"}
         df_final.rename(columns=rename_map, inplace=True)
         
-        # Limpa as colunas não necessárias para exibição
-        for c in ["Tipo_Contrato", "ChaveNFeContraNota"]:
+        # Limpa as colunas cruas que não vão mais para o front-end
+        for c in ["Tipo_Contrato", "ChaveNFeContraNota", "ChaveNFeReferenciada"]:
             if c in df_final.columns: df_final.drop(columns=[c], inplace=True)
             
         cols_num = [c for c in df_final.columns if "(Kg)" in c or "%" in c or c == "Romaneio"]
