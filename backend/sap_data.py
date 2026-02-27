@@ -1,4 +1,4 @@
-# VERSÃO: 12.4 - Correção Manual (I7U07) Inclusa
+# VERSÃO: 12.5 - Fonte Única (Romaneio) e Extração de Nota pela Chave
 import os
 import pandas as pd
 import requests
@@ -23,7 +23,8 @@ class SAPConnector:
     def __init__(self):
         self.auth = (os.getenv("SAP_USER"), os.getenv("SAP_PASS"))
         self.url_romaneio = os.getenv("API_ROMANEIO_URL")
-        self.url_fatura = os.getenv("API_FATURA_URL")
+        # A URL de fatura foi mantida aqui apenas por legado, mas não é mais acionada.
+        self.url_fatura = os.getenv("API_FATURA_URL") 
         self.url_fornecedores = "https://faz.sap.fazendaoto.com.br/sap/opu/odata/sap/FAP_DISPLAY_SUPPLIER_LIST"
 
     def _fetch_full_odata(self, base_url, entity_set, params):
@@ -112,7 +113,6 @@ class SAPConnector:
         pid_padded = None
         if parceiro_id: pid_padded = str(parceiro_id).strip().zfill(10)
 
-        # MUDANÇA AQUI: Inclusão do filtro (stat eq 'I7U07')
         f_rom = (
             "(Instr_EDC eq '07' or Instr_EDC eq '03' or Instr_EDC eq '35') and "
             "(Tipo_Contrato eq 'AC3P' or Tipo_Contrato eq 'ZFIX' or Tipo_Contrato eq '') and "
@@ -120,35 +120,45 @@ class SAPConnector:
         )
         if pid_padded: f_rom += f" and (Parceiro eq '{pid_padded}')"
         
-        cols_rom = ["Parceiro", "Parceiro_T", "Instr_EDC", "contrato", "Num_Pesagem", "data_edc", "Material", "NomeMaterial", "NomeSafra", "NomeLocal_Evento", "Placa", "NFe", "TextoTransgenia_Descarga", "Peso_Bruto_Descarga", "Tara_Descarga", "Peso_Liquido_Descarga", "Qtd_Aplicada", "Peso_Total", "Umidade_Descarga", "Peso_umidade", "Impurezas_Descarga", "Peso_Impurezas", "Ardidos_Descarga", "Peso_Ardidos", "Avariados_Descarga", "Peso_Avariados", "Esverdeados_Descarga", "Peso_Esverdeados", "Quebrados_Descarga", "Peso_Quebrados", "Queimados_Descarga", "Peso_Queimados", "Doc_Aplicacao", "Tipo_Contrato"]
+        # MUDANÇA: Inclusão do campo 'ChaveNFeContraNota' no select
+        cols_rom = [
+            "Parceiro", "Parceiro_T", "Instr_EDC", "contrato", "Num_Pesagem", "data_edc", 
+            "Material", "NomeMaterial", "NomeSafra", "NomeLocal_Evento", "Placa", "NFe", 
+            "TextoTransgenia_Descarga", "Peso_Bruto_Descarga", "Tara_Descarga", 
+            "Peso_Liquido_Descarga", "Qtd_Aplicada", "Peso_Total", "Umidade_Descarga", 
+            "Peso_umidade", "Impurezas_Descarga", "Peso_Impurezas", "Ardidos_Descarga", 
+            "Peso_Ardidos", "Avariados_Descarga", "Peso_Avariados", "Esverdeados_Descarga", 
+            "Peso_Esverdeados", "Quebrados_Descarga", "Peso_Quebrados", "Queimados_Descarga", 
+            "Peso_Queimados", "Doc_Aplicacao", "Tipo_Contrato", "ChaveNFeContraNota"
+        ]
+        
         params_rom = {"$filter": f_rom, "$select": ",".join(cols_rom), "$format": "json"}
-        df_rom = self._fetch_full_odata(self.url_romaneio, "ZC_ACM_LISTA_ROMANEIO_Q001", params_rom)
+        df_final = self._fetch_full_odata(self.url_romaneio, "ZC_ACM_LISTA_ROMANEIO_Q001", params_rom)
         
-        if df_rom.empty: return pd.DataFrame()
+        if df_final.empty: return pd.DataFrame()
 
-        f_fat = f"(pstdat ge '{d_ini}' and pstdat le '{d_fim}') and (nftype eq 'YI')"
-        if pid_padded: f_fat += f" and (Parceiro_LF eq '{pid_padded}')"
-        
-        cols_fat = ["Aplicacao", "nfenum", "pstdat", "nftype", "Parceiro_LF"]
-        params_fat = {"$filter": f_fat, "$select": ",".join(cols_fat), "$format": "json"}
-        df_fat = self._fetch_full_odata(self.url_fatura, "ZC_FI_ENTRADAFATURA_Q001", params_fat)
-
-        df_rom['key_join'] = df_rom['Doc_Aplicacao'].astype(str).str.strip().str.lstrip('0')
-        if not df_fat.empty:
-            df_fat['key_join'] = df_fat['Aplicacao'].astype(str).str.strip().str.lstrip('0')
-            df_final = pd.merge(df_rom, df_fat, on='key_join', how='left', suffixes=('', '_fat'))
-            df_final.drop(columns=['key_join'], inplace=True)
-        else:
-            df_final = df_rom
-            for c in cols_fat: df_final[c] = None
+        # --- NOVA REGRA: Extração da Nota Fazendão via Chave de 44 dígitos ---
+        def extrair_nota(chave):
+            chave = str(chave).strip()
+            # Valida se a chave tem os 44 dígitos
+            if len(chave) == 44:
+                # Índice 25:34 no Python corresponde às posições 26 a 34. E o lstrip tira os zeros da frente.
+                nota = chave[25:34].lstrip('0')
+                return nota if nota else '0'
+            return ''
+            
+        df_final['Nota Fazendao'] = df_final['ChaveNFeContraNota'].apply(extrair_nota)
+        # ---------------------------------------------------------------------
 
         if 'data_edc' in df_final.columns:
             df_final['data_edc'] = pd.to_datetime(df_final['data_edc'], format='%Y%m%d', errors='coerce').dt.strftime('%d/%m/%Y')
         
-        rename_map = {"Doc_Aplicacao": "ID.apl", "Parceiro": "Cod. Parceiro", "Parceiro_T": "Razão Social", "Instr_EDC": "Instr. EDC", "Num_Pesagem": "Romaneio", "NomeLocal_Evento": "Unidade", "NFe": "Nota Produtor", "NomeMaterial": "NomeMaterial", "TextoTransgenia_Descarga": "Transgenia", "Peso_Bruto_Descarga": "Peso Bruto (Kg)", "Tara_Descarga": "Peso Tara (Kg)", "Peso_Liquido_Descarga": "Peso liquido (Kg)", "Qtd_Aplicada": "Qtd Aplicada (Kg)", "Peso_Total": "Descontos (Kg)", "Umidade_Descarga": "% Umidade", "Peso_umidade": "Desconto Umidade (Kg)", "Impurezas_Descarga": "% Impurezas", "Peso_Impurezas": "Desconto Impureza (Kg)", "Ardidos_Descarga": "% Ardido", "Peso_Ardidos": "Desconto Ardidos (Kg)", "Avariados_Descarga": "% Avariados", "Peso_Avariados": "Desconto Avariados (Kg)", "Esverdeados_Descarga": "% Esverdeados", "Peso_Esverdeados": "Desconto Esverdeados (Kg)", "Quebrados_Descarga": "% Quebrados", "Peso_Quebrados": "Desconto Quebrados (Kg)", "Queimados_Descarga": "% Queimados", "Peso_Queimados": "Desconto Queimados (Kg)", "data_edc": "Data do edc", "nfenum": "Nota Fazendao"}
+        # MUDANÇA: nfenum removido, pois a Nota Fazendao já foi criada no passo anterior
+        rename_map = {"Doc_Aplicacao": "ID.apl", "Parceiro": "Cod. Parceiro", "Parceiro_T": "Razão Social", "Instr_EDC": "Instr. EDC", "Num_Pesagem": "Romaneio", "NomeLocal_Evento": "Unidade", "NFe": "Nota Produtor", "NomeMaterial": "NomeMaterial", "TextoTransgenia_Descarga": "Transgenia", "Peso_Bruto_Descarga": "Peso Bruto (Kg)", "Tara_Descarga": "Peso Tara (Kg)", "Peso_Liquido_Descarga": "Peso liquido (Kg)", "Qtd_Aplicada": "Qtd Aplicada (Kg)", "Peso_Total": "Descontos (Kg)", "Umidade_Descarga": "% Umidade", "Peso_umidade": "Desconto Umidade (Kg)", "Impurezas_Descarga": "% Impurezas", "Peso_Impurezas": "Desconto Impureza (Kg)", "Ardidos_Descarga": "% Ardido", "Peso_Ardidos": "Desconto Ardidos (Kg)", "Avariados_Descarga": "% Avariados", "Peso_Avariados": "Desconto Avariados (Kg)", "Esverdeados_Descarga": "% Esverdeados", "Peso_Esverdeados": "Desconto Esverdeados (Kg)", "Quebrados_Descarga": "% Quebrados", "Peso_Quebrados": "Desconto Quebrados (Kg)", "Queimados_Descarga": "% Queimados", "Peso_Queimados": "Desconto Queimados (Kg)", "data_edc": "Data do edc"}
         df_final.rename(columns=rename_map, inplace=True)
         
-        for c in ["docnum", "itmnum", "Aplicacao", "nftype", "pstdat", "Tipo_Contrato", "Parceiro_LF"]:
+        # Limpa as colunas não necessárias para exibição
+        for c in ["Tipo_Contrato", "ChaveNFeContraNota"]:
             if c in df_final.columns: df_final.drop(columns=[c], inplace=True)
             
         cols_num = [c for c in df_final.columns if "(Kg)" in c or "%" in c or c == "Romaneio"]
