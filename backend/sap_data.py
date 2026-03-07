@@ -1,4 +1,4 @@
-# VERSÃO: 12.6 - Fonte Única (Romaneio) com Extração Dupla (Produtor e Fazendão) via Chave de 44 dígitos
+# VERSÃO: 12.8 - Renomeado para Peso LDC (35) e Atualização de Saldo
 import os
 import pandas as pd
 import requests
@@ -7,13 +7,10 @@ from datetime import datetime, timedelta
 import urllib3
 import logging
 
-# Configuração de Logs
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Desativa avisos de certificado (SSL)
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-
 load_dotenv()
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -23,7 +20,6 @@ class SAPConnector:
     def __init__(self):
         self.auth = (os.getenv("SAP_USER"), os.getenv("SAP_PASS"))
         self.url_romaneio = os.getenv("API_ROMANEIO_URL")
-        # Fatura não é mais acionada
         self.url_fatura = os.getenv("API_FATURA_URL") 
         self.url_fornecedores = "https://faz.sap.fazendaoto.com.br/sap/opu/odata/sap/FAP_DISPLAY_SUPPLIER_LIST"
 
@@ -113,19 +109,18 @@ class SAPConnector:
         pid_padded = None
         if parceiro_id: pid_padded = str(parceiro_id).strip().zfill(10)
 
-        f_rom = (
+        f_rom =  (
             "(Instr_EDC eq '07' or Instr_EDC eq '03' or Instr_EDC eq '35') and "
             "(Tipo_Contrato eq 'AC3P' or Tipo_Contrato eq 'ZFIX' or Tipo_Contrato eq '') and "
-            f"(data_edc ge '{d_ini}' and data_edc le '{d_fim}') and (stat eq 'I7U07')"
+            f"(data_edc ge '{d_ini}' and data_edc le '{d_fim}') and (stat eq 'I7U07') and (ID_Safra ne '200') and (InscricaoEstadual ne '')"
         )
         if pid_padded: f_rom += f" and (Parceiro eq '{pid_padded}')"
         
-        # MUDANÇA: Inclusão de ambas as chaves NFe (ContraNota e Referenciada)
         cols_rom = [
             "Parceiro", "Parceiro_T", "Instr_EDC", "contrato", "Num_Pesagem", "data_edc", 
             "Material", "NomeMaterial", "NomeSafra", "NomeLocal_Evento", "Placa", 
             "TextoTransgenia_Descarga", "Peso_Bruto_Descarga", "Tara_Descarga", 
-            "Peso_Liquido_Descarga", "Qtd_Aplicada", "Peso_Total", "Umidade_Descarga", 
+            "Peso_Liquido_Descarga", "Peso_Liquido_Carga", "Qtd_Aplicada", "Qtd_Devolvida", "Peso_Total", "Umidade_Descarga", 
             "Peso_umidade", "Impurezas_Descarga", "Peso_Impurezas", "Ardidos_Descarga", 
             "Peso_Ardidos", "Avariados_Descarga", "Peso_Avariados", "Esverdeados_Descarga", 
             "Peso_Esverdeados", "Quebrados_Descarga", "Peso_Quebrados", "Queimados_Descarga", 
@@ -138,34 +133,42 @@ class SAPConnector:
         
         if df_final.empty: return pd.DataFrame()
 
-        # --- NOVA REGRA: Extração da Nota via Chaves de 44 dígitos ---
         def extrair_nota(chave):
             if pd.isna(chave): return ''
             chave = str(chave).strip()
-            # Valida se a chave tem os 44 dígitos
             if len(chave) == 44:
-                # Índice 25:34 no Python corresponde às posições 26 a 34 da String
                 nota = chave[25:34].lstrip('0')
                 return nota if nota else '0'
             return ''
             
-        # Aplica a função para criar as colunas que o painel e os PDFs esperam
         df_final['Nota Produtor'] = df_final['ChaveNFeReferenciada'].apply(extrair_nota)
         df_final['Nota Fazendao'] = df_final['ChaveNFeContraNota'].apply(extrair_nota)
-        # ---------------------------------------------------------------------
+
+        df_final['Qtd_Aplicada'] = pd.to_numeric(df_final.get('Qtd_Aplicada', 0), errors='coerce').fillna(0)
+        df_final['Qtd_Devolvida'] = pd.to_numeric(df_final.get('Qtd_Devolvida', 0), errors='coerce').fillna(0)
+        df_final['Peso_Liquido_Carga'] = pd.to_numeric(df_final.get('Peso_Liquido_Carga', 0), errors='coerce').fillna(0)
+
+        def rule_peso_carga(row):
+            if str(row.get('Instr_EDC')).strip() == '35':
+                return -abs(float(row.get('Peso_Liquido_Carga', 0))) 
+            return 0.0
+
+        df_final['Peso_Liquido_Carga'] = df_final.apply(rule_peso_carga, axis=1)
 
         if 'data_edc' in df_final.columns:
             df_final['data_edc'] = pd.to_datetime(df_final['data_edc'], format='%Y%m%d', errors='coerce').dt.strftime('%d/%m/%Y')
         
-        # Renomeação Padrão
-        rename_map = {"Doc_Aplicacao": "ID.apl", "Parceiro": "Cod. Parceiro", "Parceiro_T": "Razão Social", "Instr_EDC": "Instr. EDC", "Num_Pesagem": "Romaneio", "NomeLocal_Evento": "Unidade", "NomeMaterial": "NomeMaterial", "TextoTransgenia_Descarga": "Transgenia", "Peso_Bruto_Descarga": "Peso Bruto (Kg)", "Tara_Descarga": "Peso Tara (Kg)", "Peso_Liquido_Descarga": "Peso liquido (Kg)", "Qtd_Aplicada": "Qtd Aplicada (Kg)", "Peso_Total": "Descontos (Kg)", "Umidade_Descarga": "% Umidade", "Peso_umidade": "Desconto Umidade (Kg)", "Impurezas_Descarga": "% Impurezas", "Peso_Impurezas": "Desconto Impureza (Kg)", "Ardidos_Descarga": "% Ardido", "Peso_Ardidos": "Desconto Ardidos (Kg)", "Avariados_Descarga": "% Avariados", "Peso_Avariados": "Desconto Avariados (Kg)", "Esverdeados_Descarga": "% Esverdeados", "Peso_Esverdeados": "Desconto Esverdeados (Kg)", "Quebrados_Descarga": "% Quebrados", "Peso_Quebrados": "Desconto Quebrados (Kg)", "Queimados_Descarga": "% Queimados", "Peso_Queimados": "Desconto Queimados (Kg)", "data_edc": "Data do edc"}
+        # MUDANÇA: Renomeado para Peso LDC (35)
+        rename_map = {"Doc_Aplicacao": "ID.apl", "Parceiro": "Cod. Parceiro", "Parceiro_T": "Razão Social", "Instr_EDC": "Instr. EDC", "Num_Pesagem": "Romaneio", "NomeLocal_Evento": "Unidade", "NomeMaterial": "NomeMaterial", "TextoTransgenia_Descarga": "Transgenia", "Peso_Bruto_Descarga": "Peso Bruto (Kg)", "Tara_Descarga": "Peso Tara (Kg)", "Peso_Liquido_Descarga": "Peso liquido (Kg)", "Qtd_Aplicada": "Qtd Aplicada (Kg)", "Qtd_Devolvida": "Qtd Devolvida (Kg)", "Peso_Liquido_Carga": "Peso LDC (35) (Kg)", "Peso_Total": "Descontos (Kg)", "Umidade_Descarga": "% Umidade", "Peso_umidade": "Desconto Umidade (Kg)", "Impurezas_Descarga": "% Impurezas", "Peso_Impurezas": "Desconto Impureza (Kg)", "Ardidos_Descarga": "% Ardido", "Peso_Ardidos": "Desconto Ardidos (Kg)", "Avariados_Descarga": "% Avariados", "Peso_Avariados": "Desconto Avariados (Kg)", "Esverdeados_Descarga": "% Esverdeados", "Peso_Esverdeados": "Desconto Esverdeados (Kg)", "Quebrados_Descarga": "% Quebrados", "Peso_Quebrados": "Desconto Quebrados (Kg)", "Queimados_Descarga": "% Queimados", "Peso_Queimados": "Desconto Queimados (Kg)", "data_edc": "Data do edc"}
         df_final.rename(columns=rename_map, inplace=True)
         
-        # Limpa as colunas cruas que não vão mais para o front-end
         for c in ["Tipo_Contrato", "ChaveNFeContraNota", "ChaveNFeReferenciada"]:
             if c in df_final.columns: df_final.drop(columns=[c], inplace=True)
             
         cols_num = [c for c in df_final.columns if "(Kg)" in c or "%" in c or c == "Romaneio"]
         for col in cols_num: df_final[col] = pd.to_numeric(df_final[col], errors='coerce').fillna(0)
         
+        # MUDANÇA: Cálculo referenciando o novo nome "Peso LDC (35) (Kg)"
+        df_final['Saldo (Kg)'] = df_final['Qtd Aplicada (Kg)'] - df_final['Qtd Devolvida (Kg)'] - df_final['Peso LDC (35) (Kg)'].abs()
+
         return df_final

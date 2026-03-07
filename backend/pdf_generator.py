@@ -1,4 +1,4 @@
-# VERSÃO: 13.7 - Adição de Contrato no Cabeçalho
+# VERSÃO: 13.9 - Ordem Atualizada com LDC (35) nos PDFs
 from xhtml2pdf import pisa
 from io import BytesIO
 import pandas as pd
@@ -47,11 +47,11 @@ def get_base_html(conteudo_paginas):
     </html>
     """
 
-# MUDANÇA: Adicionado argumento contrato_info
 def gerar_pdf_resumido(df, parceiro_info, material_info, safra_info, contrato_info, periodo_texto):
     try:
-        ROWS_PER_PAGE = 9 
-        cols_totais = ["Peso Bruto (Kg)", "Peso Tara (Kg)", "Peso liquido (Kg)", "Qtd Aplicada (Kg)", "Descontos (Kg)"]
+        ROWS_PER_PAGE = 7 
+        # MUDANÇA: Inclusão do LDC 35 nos totais
+        cols_totais = ["Peso Bruto (Kg)", "Peso Tara (Kg)", "Peso liquido (Kg)", "Descontos (Kg)", "Qtd Aplicada (Kg)", "Qtd Devolvida (Kg)", "Peso LDC (35) (Kg)", "Saldo (Kg)"]
         totais = {col: df[col].sum() for col in cols_totais if col in df.columns}
 
         base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -68,16 +68,18 @@ def gerar_pdf_resumido(df, parceiro_info, material_info, safra_info, contrato_in
                 avarias = f"Av: {formatar_numero(row.get('% Avariados',0),1)}% | Es: {formatar_numero(row.get('% Esverdeados',0),1)}% | Qu: {formatar_numero(row.get('% Quebrados',0),1)}%"
 
                 r1 = f"""<tr class="row-main"><td>Data: {row.get('Data do edc', '')}</td><td>Roman: {row.get('Romaneio', '')}</td><td>Contr: {row.get('contrato', '')}</td><td>Placa: {row.get('Placa', '')}</td><td>Nota Produtor: {row.get('Nota Produtor', '')}</td><td>Nota Fazendao: {row.get('Nota Fazendao', '')}</td><td colspan="3" class="text-right">Local: {unidade}</td></tr>"""
-                r2 = f"""<tr class="row-sec"><td>Bruto: {formatar_numero(row.get('Peso Bruto (Kg)'))}</td><td>Tara: {formatar_numero(row.get('Peso Tara (Kg)'))}</td><td style="font-size:10px;">Líquido: {formatar_numero(row.get('Peso liquido (Kg)'))}</td><td>Umid: {formatar_numero(row.get('% Umidade'))}%</td><td>Imp: {formatar_numero(row.get('% Impurezas'))}%</td><td colspan="4" class="text-right" style="font-style:italic;">{avarias}</td></tr>"""
-                rows_html += r1 + r2
+                # MUDANÇA: Exibição alinhada: Bruto, Tara, Liq, Desc, Apl, Dev, LDC(35), Saldo
+                r2 = f"""<tr class="row-sec"><td>Bruto: {formatar_numero(row.get('Peso Bruto (Kg)'))}</td><td>Tara: {formatar_numero(row.get('Peso Tara (Kg)'))}</td><td>Líq: {formatar_numero(row.get('Peso liquido (Kg)'))}</td><td>Desc: {formatar_numero(row.get('Descontos (Kg)'))}</td><td>Apl: {formatar_numero(row.get('Qtd Aplicada (Kg)'))}</td><td>Dev: {formatar_numero(row.get('Qtd Devolvida (Kg)'))}</td><td>LDC(35): {formatar_numero(row.get('Peso LDC (35) (Kg)'))}</td><td colspan="2">Saldo: {formatar_numero(row.get('Saldo (Kg)'))}</td></tr>"""
+                r3 = f"""<tr class="row-det"><td colspan="2">Umid: {formatar_numero(row.get('% Umidade'))}%</td><td colspan="2">Imp: {formatar_numero(row.get('% Impurezas'))}%</td><td colspan="5" class="text-right" style="font-style:italic;">{avarias}</td></tr>"""
+                
+                rows_html += r1 + r2 + r3
             
             row_total = ""
             if i == len(chunks) - 1:
-                row_total = f"""<tr class="row-total"><td>TOTAIS:</td><td>Bruto: {formatar_numero(totais.get('Peso Bruto (Kg)',0))}</td><td>Tara: {formatar_numero(totais.get('Peso Tara (Kg)',0))}</td><td>Liq: {formatar_numero(totais.get('Peso liquido (Kg)',0))}</td><td>Apl: {formatar_numero(totais.get('Qtd Aplicada (Kg)',0))}</td><td colspan="4">Desc: {formatar_numero(totais.get('Descontos (Kg)',0))}</td></tr>"""
+                row_total = f"""<tr class="row-total"><td>TOTAIS:</td><td>Bruto: {formatar_numero(totais.get('Peso Bruto (Kg)',0))}</td><td>Tara: {formatar_numero(totais.get('Peso Tara (Kg)',0))}</td><td>Liq: {formatar_numero(totais.get('Peso liquido (Kg)',0))}</td><td>Desc: {formatar_numero(totais.get('Descontos (Kg)',0))}</td><td>Apl: {formatar_numero(totais.get('Qtd Aplicada (Kg)',0))}</td><td>Dev: {formatar_numero(totais.get('Qtd Devolvida (Kg)',0))}</td><td>LDC(35): {formatar_numero(totais.get('Peso LDC (35) (Kg)',0))}</td><td>Saldo: {formatar_numero(totais.get('Saldo (Kg)',0))}</td></tr>"""
             
             break_page = '<div class="page-break"></div>' if i < len(chunks) - 1 else ''
             
-            # MUDANÇA: Incluído CONTRATO na info-box
             pages_html += f"""<div><table class="header-table"><tr><td width="20%">{img_tag}</td><td width="60%" class="title">Relatório Padrão Produtor Resumido</td><td width="20%" class="meta">{periodo_texto}<br>Pág: {i+1}/{len(chunks)}</td></tr></table>
             <div class="info-box">PARCEIRO: {parceiro_info} &nbsp;&nbsp;|&nbsp;&nbsp; MATERIAL: {material_info} &nbsp;&nbsp;|&nbsp;&nbsp; SAFRA: {safra_info} &nbsp;&nbsp;|&nbsp;&nbsp; CONTRATO: {contrato_info}</div>
             <table>{rows_html}{row_total}</table></div>{break_page}"""
@@ -90,11 +92,10 @@ def gerar_pdf_resumido(df, parceiro_info, material_info, safra_info, contrato_in
         logger.error(f"ERRO RESUMIDO: {e}")
         return BytesIO()
 
-# MUDANÇA: Adicionado argumento contrato_info
 def gerar_pdf_detalhado(df, parceiro_info, material_info, safra_info, contrato_info, periodo_texto):
     try:
         ROWS_PER_PAGE = 7
-        cols_totais = ["Peso Bruto (Kg)", "Peso Tara (Kg)", "Peso liquido (Kg)", "Qtd Aplicada (Kg)", "Descontos (Kg)"]
+        cols_totais = ["Peso Bruto (Kg)", "Peso Tara (Kg)", "Peso liquido (Kg)", "Descontos (Kg)", "Qtd Aplicada (Kg)", "Qtd Devolvida (Kg)", "Peso LDC (35) (Kg)", "Saldo (Kg)"]
         totais_gerais = {col: df[col].sum() for col in cols_totais if col in df.columns}
 
         base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -108,16 +109,16 @@ def gerar_pdf_detalhado(df, parceiro_info, material_info, safra_info, contrato_i
             rows_html = ""
             for _, row in chunk.iterrows():
                 r1 = f"""<tr class="row-main"><td>ID: {row.get('ID.apl', '')}</td><td>Contr: {row.get('contrato', '')}</td><td>Instr: {row.get('Instr. EDC', '')}</td><td>Roman: {row.get('Romaneio', '')}</td><td>Data: {row.get('Data do edc', '')}</td><td>Placa: {row.get('Placa', '')}</td><td>Nota Produtor: {row.get('Nota Produtor', '')}</td><td>Nota Fazendao: {row.get('Nota Fazendao', '')}</td><td colspan="2">Local: {str(row.get('Unidade', ''))[:30]}</td></tr>"""
-                r2 = f"""<tr class="row-sec"><td>Transg: {row.get('Transgenia', '')}</td><td>Bruto: {formatar_numero(row.get('Peso Bruto (Kg)'))}</td><td>Tara: {formatar_numero(row.get('Peso Tara (Kg)'))}</td><td>Líquido: {formatar_numero(row.get('Peso liquido (Kg)'))}</td><td>Qtd Apl: {formatar_numero(row.get('Qtd Aplicada (Kg)'))}</td><td colspan="5">Desc: {formatar_numero(row.get('Descontos (Kg)'))}</td></tr>"""
-                r3 = f"""<tr class="row-det"><td>Umid: {formatar_numero(row.get('% Umidade'))}% / {formatar_numero(row.get('Desconto Umidade (Kg)'))}</td><td>Imp: {formatar_numero(row.get('% Impurezas'))}% / {formatar_numero(row.get('Desconto Impureza (Kg)'))}</td><td>Ard: {formatar_numero(row.get('% Ardido'))}% / {formatar_numero(row.get('Desconto Ardidos (Kg)'))}</td><td>Ava: {formatar_numero(row.get('% Avariados'))}% / {formatar_numero(row.get('Desconto Avariados (Kg)'))}</td><td>Esv: {formatar_numero(row.get('% Esverdeados'))}% / {formatar_numero(row.get('Desconto Esverdeados (Kg)'))}</td><td>Que: {formatar_numero(row.get('% Quebrados'))}% / {formatar_numero(row.get('Desconto Quebrados (Kg)'))}</td><td colspan="4">Quei: {formatar_numero(row.get('% Queimados'))}% / {formatar_numero(row.get('Desconto Queimados (Kg)'))}</td></tr>"""
+                # MUDANÇA: Exibição alinhada no detalhado
+                r2 = f"""<tr class="row-sec"><td>Bruto: {formatar_numero(row.get('Peso Bruto (Kg)'))}</td><td>Tara: {formatar_numero(row.get('Peso Tara (Kg)'))}</td><td>Líq: {formatar_numero(row.get('Peso liquido (Kg)'))}</td><td>Desc: {formatar_numero(row.get('Descontos (Kg)'))}</td><td>Apl: {formatar_numero(row.get('Qtd Aplicada (Kg)'))}</td><td>Dev: {formatar_numero(row.get('Qtd Devolvida (Kg)'))}</td><td colspan="2">LDC(35): {formatar_numero(row.get('Peso LDC (35) (Kg)'))}</td><td colspan="2">Saldo: {formatar_numero(row.get('Saldo (Kg)'))}</td></tr>"""
+                r3 = f"""<tr class="row-det"><td>Transg: {row.get('Transgenia', '')}</td><td>Umid: {formatar_numero(row.get('% Umidade'))}% / {formatar_numero(row.get('Desconto Umidade (Kg)'))}</td><td>Imp: {formatar_numero(row.get('% Impurezas'))}% / {formatar_numero(row.get('Desconto Impureza (Kg)'))}</td><td>Ard: {formatar_numero(row.get('% Ardido'))}% / {formatar_numero(row.get('Desconto Ardidos (Kg)'))}</td><td>Ava: {formatar_numero(row.get('% Avariados'))}% / {formatar_numero(row.get('Desconto Avariados (Kg)'))}</td><td>Esv: {formatar_numero(row.get('% Esverdeados'))}% / {formatar_numero(row.get('Desconto Esverdeados (Kg)'))}</td><td>Que: {formatar_numero(row.get('% Quebrados'))}% / {formatar_numero(row.get('Desconto Quebrados (Kg)'))}</td><td colspan="3">Quei: {formatar_numero(row.get('% Queimados'))}% / {formatar_numero(row.get('Desconto Queimados (Kg)'))}</td></tr>"""
                 rows_html += r1 + r2 + r3
 
             row_total = ""
             if i == len(chunks) - 1:
-                row_total = f"""<tr class="row-total"><td>TOTAIS:</td><td>Bruto: {formatar_numero(totais_gerais.get('Peso Bruto (Kg)', 0))}</td><td>Tara: {formatar_numero(totais_gerais.get('Peso Tara (Kg)', 0))}</td><td>Líquido: {formatar_numero(totais_gerais.get('Peso liquido (Kg)', 0))}</td><td>Qtd Apl: {formatar_numero(totais_gerais.get('Qtd Aplicada (Kg)', 0))}</td><td colspan="5">Desc: {formatar_numero(totais_gerais.get('Descontos (Kg)', 0))}</td></tr>"""
+                row_total = f"""<tr class="row-total"><td>TOTAIS:</td><td>Bruto: {formatar_numero(totais_gerais.get('Peso Bruto (Kg)', 0))}</td><td>Tara: {formatar_numero(totais_gerais.get('Peso Tara (Kg)', 0))}</td><td>Líq: {formatar_numero(totais_gerais.get('Peso liquido (Kg)', 0))}</td><td>Desc: {formatar_numero(totais_gerais.get('Descontos (Kg)', 0))}</td><td>Apl: {formatar_numero(totais_gerais.get('Qtd Aplicada (Kg)', 0))}</td><td>Dev: {formatar_numero(totais_gerais.get('Qtd Devolvida (Kg)', 0))}</td><td colspan="2">LDC(35): {formatar_numero(totais_gerais.get('Peso LDC (35) (Kg)', 0))}</td><td>Saldo: {formatar_numero(totais_gerais.get('Saldo (Kg)', 0))}</td></tr>"""
 
             break_page = '<div class="page-break"></div>' if i < len(chunks) - 1 else ''
-            # MUDANÇA: Incluído CONTRATO na info-box
             pages_html += f"""<div><table class="header-table"><tr><td width="20%">{img_tag}</td><td width="60%" class="title">Relatório Padrão Produtor Detalhado</td><td width="20%" class="meta">{periodo_texto}<br>Pág: {i+1}/{len(chunks)}</td></tr></table>
             <div class="info-box">PARCEIRO: {parceiro_info} &nbsp;&nbsp;|&nbsp;&nbsp; MATERIAL: {material_info} &nbsp;&nbsp;|&nbsp;&nbsp; SAFRA: {safra_info} &nbsp;&nbsp;|&nbsp;&nbsp; CONTRATO: {contrato_info}</div>
             <table>{rows_html}{row_total}</table></div>{break_page}"""

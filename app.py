@@ -1,4 +1,4 @@
-# VERSÃO: 13.5 - Layout Compacto (2 Linhas de Filtros)
+# VERSÃO: 13.8 - Ordem: Bruto, Tara, Liquido, Descontos, Aplicado, Devolvido, Peso LDC (35), Saldo
 import dash
 from dash import dcc, html, Input, Output, State, dash_table, no_update, ctx
 import dash_bootstrap_components as dbc
@@ -20,12 +20,16 @@ BADGE_STYLE = {
     "fontWeight": "bold", "display": "inline-block"
 }
 
+# MUDANÇA: Ordem Atualizada Conforme Solicitação
 ORDEM_COLUNAS = [
     "ID.apl", "Razão Social", "contrato", "Instr. EDC", "Romaneio", 
     "Data do edc", "Material", "NomeMaterial", "NomeSafra", "Unidade", "Placa", 
     "Nota Produtor", "Nota Fazendao", 
-    "Transgenia", "Peso Bruto (Kg)", "Peso Tara (Kg)", "Peso liquido (Kg)", 
-    "Qtd Aplicada (Kg)", "Descontos (Kg)", "% Umidade", "Desconto Umidade (Kg)", 
+    "Transgenia", 
+    "Peso Bruto (Kg)", "Peso Tara (Kg)", "Peso liquido (Kg)", 
+    "Descontos (Kg)", "Qtd Aplicada (Kg)", "Qtd Devolvida (Kg)", 
+    "Peso LDC (35) (Kg)", "Saldo (Kg)", 
+    "% Umidade", "Desconto Umidade (Kg)", 
     "% Impurezas", "Desconto Impureza (Kg)"
 ]
 
@@ -33,7 +37,6 @@ app.layout = dbc.Container([
     dcc.Store(id="store-dados"),
     dcc.Store(id="store-lista-fornecedores"),
     
-    # 1. CABEÇALHO (Fixo)
     dbc.Navbar(
         dbc.Container([
             dbc.Row([
@@ -44,10 +47,8 @@ app.layout = dbc.Container([
         ], fluid=True), color="#0C5959", dark=True, className="py-0 flex-shrink-0", style={"height": "40px"}
     ),
 
-    # 2. FILTROS (Compactado em 2 Linhas)
     dbc.Card([
         dbc.CardBody([
-            # LINHA 1: Base, Nome, Cód, Doc, Início, Fim (Total 12 cols)
             dbc.Row([
                 dbc.Col([
                     dbc.Label("Base", className="fw-bold small mb-0"),
@@ -57,22 +58,15 @@ app.layout = dbc.Container([
                 dbc.Col([dbc.Label("Nome", className="small fw-bold mb-0"), dcc.Dropdown(id="dd-nome", placeholder="Nome...", className="small-dropdown-sm", style={"fontSize": "0.85rem"})], width=3),
                 dbc.Col([dbc.Label("Cód. SAP", className="small fw-bold mb-0"), dcc.Dropdown(id="dd-codigo", placeholder="Cód...", className="small-dropdown-sm", style={"fontSize": "0.85rem"})], width=2),
                 dbc.Col([dbc.Label("Documento", className="small fw-bold mb-0"), dcc.Dropdown(id="dd-doc", placeholder="Doc...", className="small-dropdown-sm", style={"fontSize": "0.85rem"})], width=2),
-                
-                # Datas subiram para a linha 1 para economizar espaço
                 dbc.Col([dbc.Label("Início", className="small mb-0"), dbc.Input(id="dt-inicio", type="date", value=date.today().replace(day=1), size="sm", style={"fontSize": "0.85rem"})], width=2),
                 dbc.Col([dbc.Label("Fim", className="small mb-0"), dbc.Input(id="dt-fim", type="date", value=date.today(), size="sm", style={"fontSize": "0.85rem"})], width=2),
             ], className="mb-2 g-1 align-items-end"),
 
-            # LINHA 2: Filtros Específicos + Botões (Total 12 cols)
             dbc.Row([
                 dbc.Col([dbc.Label("Material", className="small mb-0 fw-bold text-primary"), dcc.Dropdown(id="dd-material", placeholder="Todos", clearable=True, className="small-dropdown-sm", style={"fontSize": "0.85rem"})], width=2),
                 dbc.Col([dbc.Label("Safra", className="small mb-0 fw-bold text-success"), dcc.Dropdown(id="dd-safra", placeholder="Todas", clearable=True, className="small-dropdown-sm", style={"fontSize": "0.85rem"})], width=2),
                 dbc.Col([dbc.Label("Contrato", className="small mb-0 fw-bold text-dark"), dcc.Dropdown(id="dd-contrato", placeholder="Todos", clearable=True, className="small-dropdown-sm", style={"fontSize": "0.85rem"})], width=2),
-                
-                # Botão Buscar
                 dbc.Col([dbc.Button([html.I(className="bi bi-search me-1"), "BUSCAR"], id="btn-carregar", color="success", size="sm", className="w-100 fw-bold", style={"height": "31px"})], width=2),
-                
-                # Botões Exportar
                 dbc.Col([
                     dbc.ButtonGroup([
                         dbc.Button([html.I(className="bi bi-file-earmark-excel me-1"), "Excel"], id="btn-excel", color="success", outline=True, size="sm"),
@@ -84,10 +78,8 @@ app.layout = dbc.Container([
         ], className="p-2")
     ], className="mb-1 shadow-sm mx-2 flex-shrink-0 mt-2"),
 
-    # 3. TOTAIS
     html.Div(id="barra-totais", className="mb-1 mx-2 d-flex flex-wrap gap-2 flex-shrink-0"),
 
-    # 4. TABELA
     html.Div(
         className="flex-grow-1 mx-2 mb-1 border rounded overflow-hidden bg-white d-flex flex-column",
         style={"minHeight": "0"}, 
@@ -95,8 +87,6 @@ app.layout = dbc.Container([
     ),
     dcc.Download(id="download-files")
 ], fluid=True, className="vh-100 d-flex flex-column bg-light p-0 overflow-hidden")
-
-# --- CALLBACKS (Mantidos idênticos) ---
 
 @app.callback(Output("store-lista-fornecedores", "data"), Input("radio-taxa", "value"))
 def carregar_base_local(tipo):
@@ -148,7 +138,17 @@ def atualizar_tabela_totais(data, material_sel, safra_sel, contrato_sel):
 
     if df.empty: return dbc.Alert("Sem dados.", color="warning", className="m-5"), []
     
-    totais = {"Bruto": df["Peso Bruto (Kg)"].sum(), "Tara": df["Peso Tara (Kg)"].sum(), "Líquido": df["Peso liquido (Kg)"].sum(), "Aplicada": df["Qtd Aplicada (Kg)"].sum(), "Descontos": df["Descontos (Kg)"].sum()}
+    # MUDANÇA: Adicionado LDC(35) e reordenado os balões
+    totais = {
+        "Bruto": df["Peso Bruto (Kg)"].sum() if "Peso Bruto (Kg)" in df.columns else 0,
+        "Tara": df["Peso Tara (Kg)"].sum() if "Peso Tara (Kg)" in df.columns else 0,
+        "Líquido": df["Peso liquido (Kg)"].sum() if "Peso liquido (Kg)" in df.columns else 0,
+        "Descontos": df["Descontos (Kg)"].sum() if "Descontos (Kg)" in df.columns else 0,
+        "Aplicada": df["Qtd Aplicada (Kg)"].sum() if "Qtd Aplicada (Kg)" in df.columns else 0,
+        "Devolvida": df["Qtd Devolvida (Kg)"].sum() if "Qtd Devolvida (Kg)" in df.columns else 0,
+        "LDC (35)": df["Peso LDC (35) (Kg)"].sum() if "Peso LDC (35) (Kg)" in df.columns else 0,
+        "Saldo": df["Saldo (Kg)"].sum() if "Saldo (Kg)" in df.columns else 0
+    }
     badges = [html.Span([f"{k}: ", html.B(f"{v:,.0f}".replace(",", "X").replace(".", ",").replace("X", "."))], style=BADGE_STYLE) for k, v in totais.items()]
     
     cols_extras = [c for c in df.columns if c not in ORDEM_COLUNAS and c not in ["Cod. Parceiro", "DataLancamento", "Cancelado"]]
