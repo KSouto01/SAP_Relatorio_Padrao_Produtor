@@ -8,6 +8,7 @@ from dash.dash_table.Format import Format, Scheme, Group
 from backend.sap_data import SAPConnector
 from backend.pdf_generator import gerar_pdf_detalhado, gerar_pdf_resumido
 
+
 sap = SAPConnector()
 
 app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP, dbc.icons.BOOTSTRAP])
@@ -33,10 +34,10 @@ ORDEM_COLUNAS = [
     "% Impurezas", "Desconto Impureza (Kg)"
 ]
 
-app.layout = dbc.Container([
-    dcc.Store(id="store-dados"),
-    dcc.Store(id="store-lista-fornecedores"),
-    
+def serve_layout():
+    return dbc.Container([
+        dcc.Store(id="store-dados"),
+        dcc.Store(id="store-lista-fornecedores"),
     dbc.Navbar(
         dbc.Container([
             dbc.Row([
@@ -87,6 +88,8 @@ app.layout = dbc.Container([
     ),
     dcc.Download(id="download-files")
 ], fluid=True, className="vh-100 d-flex flex-column bg-light p-0 overflow-hidden")
+
+app.layout = serve_layout
 
 @app.callback(Output("store-lista-fornecedores", "data"), Input("radio-taxa", "value"))
 def carregar_base_local(tipo):
